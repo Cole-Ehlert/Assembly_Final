@@ -9,12 +9,12 @@
 
 ; the size of the game screen in characters
 %define HEIGHT 20
-%define WIDTH 40
+%define WIDTH  40
 
 ; the player starting position.
 ; top left is considered (0,0)
-%define STARTX 1
-%define STARTY 1
+%define STARTX 10
+%define STARTY 10
 
 ; these keys do things
 %define EXITCHAR 'x'
@@ -55,6 +55,12 @@ segment .bss
 	xpos	resd	1
 	ypos	resd	1
 
+	; this array is a list to store the x and y positions for the snake on the board
+	snake	resb	(HEIGHT * WIDTH * 2)
+
+	; this variable will hold the current length of the snake
+	snake_len resb 	1
+
 segment .text
 
 	global	asm_main
@@ -82,9 +88,24 @@ asm_main:
 	; read the game board file into the global variable
 	call	init_board
 
-	; set the player at the proper start position
-	mov		DWORD [xpos], STARTX
-	mov		DWORD [ypos], STARTY
+
+	; (old code) set the player at the proper start position
+;	mov		DWORD [xpos], STARTX
+;	mov		DWORD [ypos], STARTY
+
+	; initialize the head of the snake
+	mov byte [snake], STARTX
+	mov byte [snake+1], STARTY
+
+	; initialize the other segments of the snake
+	mov byte [snake+2], (STARTX-1)
+	mov byte [snake+3], STARTY
+
+	mov byte [snake+4], (STARTX-2)
+	mov byte [snake+5], STARTY
+
+	mov byte [snake_len], 3
+
 
 	; the game happens in this loop
 	; the steps are...
@@ -122,33 +143,50 @@ asm_main:
 		je		move_right
 		jmp		input_end			; or just do nothing
 
-		; move the player according to the input character
+		; (old code) move the player according to the input character
+;		move_up:
+;			dec		DWORD [ypos]
+;			jmp		input_end
+;		move_left:
+;			dec		DWORD [xpos]
+;			jmp		input_end
+;		move_down:
+;			inc		DWORD [ypos]
+;			jmp		input_end
+;		move_right:
+;			inc		DWORD [xpos]
+;		input_end:
+
+		mov ebx, 0		; ebx will be y direction
+		mov eax, 0		; eax will be x direction
 		move_up:
-			dec		DWORD [ypos]
+			mov		ebx, -1
 			jmp		input_end
 		move_left:
-			dec		DWORD [xpos]
+			mov		eax, -1
 			jmp		input_end
 		move_down:
-			inc		DWORD [ypos]
+			mov		ebx, 1
 			jmp		input_end
 		move_right:
-			inc		DWORD [xpos]
+			mov		eax, 1
 		input_end:
+		call move_snake
 
 		; (W * y) + x = pos
 
+;;;;;;;;;;;;;; doesnt work with array need to rewrite with array in mind ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; compare the current position to the wall character
-		mov		eax, WIDTH
-		mul		DWORD [ypos]
-		add		eax, DWORD [xpos]
-		lea		eax, [board + eax]
-		cmp		BYTE [eax], WALL_CHAR
-		jne		valid_move
+;		mov		eax, WIDTH
+;		mul		DWORD [ypos]
+;		add		eax, DWORD [xpos]
+;		lea		eax, [board + eax]
+;		cmp		BYTE [eax], WALL_CHAR
+;		jne		valid_move
 			; opps, that was an invalid move, reset
-			mov		DWORD [xpos], esi
-			mov		DWORD [ypos], edi
-		valid_move:
+;			mov		DWORD [xpos], esi
+;			mov		DWORD [ypos], edi
+;		valid_move:
 
 	jmp		game_loop
 	game_loop_end:
@@ -185,6 +223,48 @@ raw_mode_off:
 
 	mov		esp, ebp
 	pop		ebp
+	ret
+
+; this function will move the snake having the tail folling the head
+move_snake:
+	mov 	ecx, [snake_len]		; ecx is the loop index
+	move_loop_start:
+		cmp		ecx, 1
+		je		move_loop_end
+
+		dec 	ecx
+
+		; move the x and y positions of each segment to the one in front of it
+		mov		dl, byte [snake + ecx*2 - 2]
+		mov 	byte [snake + ecx*2], dl
+		mov		dl, byte [snake + ecx*2 -1]
+		mov 	byte [snake + ecx*2 + 1], dl
+
+		jmp 	move_loop_start
+
+	move_loop_end:
+		cmp al, 1
+		je test1
+		cmp al, -1
+		je test2
+		cmp bl, 1
+		je test3
+		cmp bl, -1
+		je test4
+
+		test1:
+		inc byte [snake]
+		jmp test_end
+		test2:
+		dec byte [snake]
+		jmp test_end
+		test3:
+		inc byte [snake + 1]
+		jmp test_end
+		test4:
+		dec byte [snake + 1]
+		test_end:
+
 	ret
 
 init_board:
@@ -274,18 +354,44 @@ render:
 		cmp		DWORD [ebp - 8], WIDTH
 		je 		x_loop_end
 
-			; check if (xpos,ypos)=(x,y)
-			mov		eax, DWORD [xpos]
-			cmp		eax, DWORD [ebp - 8]
-			jne		print_board
-			mov		eax, DWORD [ypos]
-			cmp		eax, DWORD [ebp - 4]
-			jne		print_board
+			; (old code) check if (xpos,ypos)=(x,y)
+;			mov		eax, DWORD [xpos]
+;			cmp		eax, DWORD [ebp - 8]
+;			jne		print_board
+;			mov		eax, DWORD [ypos]
+;			cmp		eax, DWORD [ebp - 4]
+;			jne		print_board
+;				; if both were equal, print the player
+;				push	PLAYER_CHAR
+;				call	putchar
+;				add		esp, 4
+;
+;				jmp		print_end
+
+			; check if (xpos,ypos)=(x,y) for every segment in snake array
+			mov ecx, [snake_len]		; ecx will be the loop counter equal to snake length
+			snake_loop_start:
+				cmp 	ecx, 0							; if counter = 0 then jump to print_board
+				jz 		print_board
+
+				dec 	ecx								; decriment ecx
+
+				mov 	ebx, 0
+				mov 	bl, byte [snake + ecx*2]
+				cmp 	ebx, DWORD [ebp - 8]			; compare snake[count*2](xpos) and x
+				jne 	snake_loop_start
+
+				mov 	bl, byte [snake + ecx*2 + 1]
+				cmp 	ebx, DWORD [ebp - 4]			; compare snake[count*2+1](ypos) and y
+				jne 	snake_loop_start
+
 				; if both were equal, print the player
 				push	PLAYER_CHAR
 				call	putchar
 				add		esp, 4
-				jmp		print_end
+				jmp 	print_end
+
+
 			print_board:
 				; otherwise print whatever's in the buffer
 				mov		eax, DWORD [ebp - 4]
