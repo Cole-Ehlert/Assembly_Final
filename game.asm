@@ -143,20 +143,6 @@ asm_main:
 		je		move_right
 		jmp		input_end			; or just do nothing
 
-		; (old code) move the player according to the input character
-;		move_up:
-;			dec		DWORD [ypos]
-;			jmp		input_end
-;		move_left:
-;			dec		DWORD [xpos]
-;			jmp		input_end
-;		move_down:
-;			inc		DWORD [ypos]
-;			jmp		input_end
-;		move_right:
-;			inc		DWORD [xpos]
-;		input_end:
-
 		mov ebx, 0		; ebx will be y direction
 		mov eax, 0		; eax will be x direction
 		move_up:
@@ -243,6 +229,8 @@ move_snake:
 		jmp 	move_loop_start
 
 	move_loop_end:
+
+		; tests to see move the head in the inputed direction
 		cmp al, 1
 		je test1
 		cmp al, -1
@@ -353,20 +341,6 @@ render:
 		x_loop_start:
 		cmp		DWORD [ebp - 8], WIDTH
 		je 		x_loop_end
-
-			; (old code) check if (xpos,ypos)=(x,y)
-;			mov		eax, DWORD [xpos]
-;			cmp		eax, DWORD [ebp - 8]
-;			jne		print_board
-;			mov		eax, DWORD [ypos]
-;			cmp		eax, DWORD [ebp - 4]
-;			jne		print_board
-;				; if both were equal, print the player
-;				push	PLAYER_CHAR
-;				call	putchar
-;				add		esp, 4
-;
-;				jmp		print_end
 
 			; check if (xpos,ypos)=(x,y) for every segment in snake array
 			mov ecx, [snake_len]		; ecx will be the loop counter equal to snake length
