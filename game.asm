@@ -46,6 +46,7 @@ segment .data
 							EXITCHAR,"=EXIT", \
 							13,10,10,0
 
+
 segment .bss
 
 	; this array stores the current rendered gameboard (HxW)
@@ -56,10 +57,14 @@ segment .bss
 	ypos	resd	1
 
 	; this array is a list to store the x and y positions for the snake on the board
-	snake	resb	(HEIGHT * WIDTH * 2)
+	snake	resd	(HEIGHT * WIDTH * 2)
 
 	; this variable will hold the current length of the snake
-	snake_len resb 	1
+	snake_len resd 	1
+
+	; these variables will store the direction of movement
+	xmov	resd	1
+	ymov	resd	1
 
 segment .text
 
@@ -89,22 +94,23 @@ asm_main:
 	call	init_board
 
 
-	; (old code) set the player at the proper start position
-;	mov		DWORD [xpos], STARTX
-;	mov		DWORD [ypos], STARTY
-
 	; initialize the head of the snake
-	mov byte [snake], STARTX
-	mov byte [snake+1], STARTY
+	mov 	DWORD [snake], STARTX
+	mov 	DWORD [snake+4], STARTY
 
 	; initialize the other segments of the snake
-	mov byte [snake+2], (STARTX-1)
-	mov byte [snake+3], STARTY
+	mov		DWORD [snake+8], (STARTX-1)
+	mov 	DWORD [snake+12], STARTY
 
-	mov byte [snake+4], (STARTX-2)
-	mov byte [snake+5], STARTY
+	mov 	DWORD [snake+16], (STARTX-2)
+	mov 	DWORD [snake+20], STARTY
 
-	mov byte [snake_len], 3
+	mov 	DWORD [snake_len], 3
+
+	; initialize the snake movement to the right
+	mov		DWORD [xmov], 1
+	mov		DWORD [ymov], 0
+
 
 
 	; the game happens in this loop
@@ -124,12 +130,6 @@ asm_main:
 		; get an action from the user
 		call	getchar
 
-		; store the current position
-		; we will test if the new position is legal
-		; if not, we will restore these
-		mov		esi, DWORD [xpos]
-		mov		edi, DWORD [ypos]
-
 		; choose what to do
 		cmp		eax, EXITCHAR
 		je		game_loop_end
@@ -143,19 +143,21 @@ asm_main:
 		je		move_right
 		jmp		input_end			; or just do nothing
 
-		mov ebx, 0		; ebx will be y direction
-		mov eax, 0		; eax will be x direction
 		move_up:
-			mov		ebx, -1
+			mov		DWORD [xmov], 0
+			mov		DWORD [ymov], -1
 			jmp		input_end
 		move_left:
-			mov		eax, -1
+			mov		DWORD [xmov], -1
+			mov		DWORD [ymov], 0
 			jmp		input_end
 		move_down:
-			mov		ebx, 1
+			mov		DWORD [xmov], 0
+			mov		DWORD [ymov], 1
 			jmp		input_end
 		move_right:
-			mov		eax, 1
+			mov		DWORD [xmov], 1
+			mov		DWORD [ymov], 0
 		input_end:
 		call move_snake
 
@@ -163,16 +165,16 @@ asm_main:
 
 ;;;;;;;;;;;;;; doesnt work with array need to rewrite with array in mind ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; compare the current position to the wall character
-;		mov		eax, WIDTH
-;		mul		DWORD [ypos]
-;		add		eax, DWORD [xpos]
-;		lea		eax, [board + eax]
-;		cmp		BYTE [eax], WALL_CHAR
-;		jne		valid_move
+		mov		eax, WIDTH
+		mul		DWORD [snake+4]
+		add		eax, DWORD [snake]
+		lea		eax, [board + eax]
+		cmp		BYTE [eax], WALL_CHAR
+		jne		valid_move
 			; opps, that was an invalid move, reset
-;			mov		DWORD [xpos], esi
-;			mov		DWORD [ypos], edi
-;		valid_move:
+		jmp game_loop_end
+		valid_move:
+
 
 	jmp		game_loop
 	game_loop_end:
@@ -221,37 +223,22 @@ move_snake:
 		dec 	ecx
 
 		; move the x and y positions of each segment to the one in front of it
-		mov		dl, byte [snake + ecx*2 - 2]
-		mov 	byte [snake + ecx*2], dl
-		mov		dl, byte [snake + ecx*2 -1]
-		mov 	byte [snake + ecx*2 + 1], dl
+		mov		edx, DWORD [snake + ecx*8 - 8]
+		mov 	DWORD [snake + ecx*8], edx
+		mov		edx, DWORD [snake + ecx*8 -4]
+		mov 	DWORD [snake + ecx*8 + 4], edx
 
 		jmp 	move_loop_start
 
 	move_loop_end:
 
-		; tests to see move the head in the inputed direction
-		cmp al, 1
-		je test1
-		cmp al, -1
-		je test2
-		cmp bl, 1
-		je test3
-		cmp bl, -1
-		je test4
-
-		test1:
-		inc byte [snake]
-		jmp test_end
-		test2:
-		dec byte [snake]
-		jmp test_end
-		test3:
-		inc byte [snake + 1]
-		jmp test_end
-		test4:
-		dec byte [snake + 1]
-		test_end:
+	; add the direction of movement to the head segment
+	mov 	eax, DWORD [snake]
+	add 	eax, [xmov]
+	mov 	DWORD [snake], eax
+	mov 	eax, DWORD [snake+4]
+	add 	eax, [ymov]
+	mov 	DWORD [snake+4], eax
 
 	ret
 
@@ -350,13 +337,12 @@ render:
 
 				dec 	ecx								; decriment ecx
 
-				mov 	ebx, 0
-				mov 	bl, byte [snake + ecx*2]
-				cmp 	ebx, DWORD [ebp - 8]			; compare snake[count*2](xpos) and x
+				mov 	ebx, DWORD [snake + ecx*8]
+				cmp 	ebx, DWORD [ebp - 8]			; compare snake(xpos) and x
 				jne 	snake_loop_start
 
-				mov 	bl, byte [snake + ecx*2 + 1]
-				cmp 	ebx, DWORD [ebp - 4]			; compare snake[count*2+1](ypos) and y
+				mov 	eax, DWORD [snake + ecx*8 + 4]
+				cmp 	eax, DWORD [ebp - 4]			; compare snake(ypos) and y
 				jne 	snake_loop_start
 
 				; if both were equal, print the player
