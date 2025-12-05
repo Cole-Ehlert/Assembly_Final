@@ -31,7 +31,7 @@ segment .data
 
 	; used to change the terminal mode
 	mode_r				db "r",0
-	raw_mode_on_cmd		db "stty raw -echo",0
+	raw_mode_on_cmd		db "stty raw -echo min 0 time 0",0
 	raw_mode_off_cmd	db "stty -raw echo",0
 
 	; ANSI escape sequence to clear/refresh the screen
@@ -46,6 +46,13 @@ segment .data
 							EXITCHAR,"=EXIT", \
 							13,10,10,0
 
+timeout:
+    dd 0          ; seconds
+    dd 50000      ; microseconds (50ms)
+
+timeout_template:
+    dd 0          ; tv_sec
+    dd 100000      ; tv_usec (50 ms)
 
 segment .bss
 
@@ -66,6 +73,9 @@ segment .bss
 	xmov	resd	1
 	ymov	resd	1
 
+	readfds: resb 128
+keybuf:     resb 1
+
 segment .text
 
 	global	asm_main
@@ -83,6 +93,7 @@ segment .text
 	extern	fgetc
 	extern	fclose
 
+_start:
 asm_main:
 	push	ebp
 	mov		ebp, esp
@@ -112,7 +123,6 @@ asm_main:
 	mov		DWORD [ymov], 0
 
 
-
 	; the game happens in this loop
 	; the steps are...
 	;   1. render (draw) the current board
@@ -127,8 +137,41 @@ asm_main:
 		; draw the game board
 		call	render
 
-		; get an action from the user
-		call	getchar
+
+		mov dword [readfds], 1
+
+; ****************** CODE THAT PAUSES AND READS INPUT ******************
+
+   ; re-init timeout each loop because select may modify it
+    mov     eax, dword [timeout_template]         ; tv_sec
+    mov     dword [timeout], eax
+    mov     eax, dword [timeout_template + 4]     ; tv_usec
+    mov     dword [timeout + 4], eax
+
+    ; call select
+    mov     eax, 142                   ; sys_select
+    mov     ebx, 1                     ; nfds = 1 (check fd 0)
+    mov     ecx, readfds               ; readfds
+    mov     edx, 0                     ; writefds = NULL
+    mov     esi, 0                     ; exceptfds = NULL
+    mov     edi, timeout               ; pointer to timeval
+    int     0x80
+
+    ; eax == 0 => timeout (no input)
+    cmp     eax, 0
+    je      input_end
+
+    ; eax > 0 => input available -> read one byte from stdin
+    mov     eax, 3                     ; sys_read
+    mov     ebx, 0                     ; fd = 0 (stdin)
+    lea     ecx, [keybuf]
+    mov     edx, 1                     ; read 1 byte
+    int     0x80
+
+    ; put character into eax for comparisons (zero-extend)
+    movzx   eax, byte [keybuf]
+
+; *****************************************************************
 
 		; choose what to do
 		cmp		eax, EXITCHAR
@@ -161,9 +204,9 @@ asm_main:
 		input_end:
 		call move_snake
 
+
 		; (W * y) + x = pos
 
-;;;;;;;;;;;;;; doesnt work with array need to rewrite with array in mind ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; compare the current position to the wall character
 		mov		eax, WIDTH
 		mul		DWORD [snake+4]
@@ -174,7 +217,6 @@ asm_main:
 			; opps, that was an invalid move, reset
 		jmp game_loop_end
 		valid_move:
-
 
 	jmp		game_loop
 	game_loop_end:
