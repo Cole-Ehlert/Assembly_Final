@@ -186,22 +186,38 @@ asm_main:
 		je		move_right
 		jmp		input_end			; or just do nothing
 
-		move_up:
-			mov		DWORD [xmov], 0
-			mov		DWORD [ymov], -1
-			jmp		input_end
-		move_left:
-			mov		DWORD [xmov], -1
-			mov		DWORD [ymov], 0
-			jmp		input_end
-		move_down:
-			mov		DWORD [xmov], 0
-			mov		DWORD [ymov], 1
-			jmp		input_end
-		move_right:
-			mov		DWORD [xmov], 1
-			mov		DWORD [ymov], 0
-		input_end:
+	move_up:
+            ; prevent reverse: cannot go up if moving down (ymov = 1)
+            cmp     dword [ymov], 1
+            je      input_end         ; ignore input
+            mov     dword [xmov], 0
+            mov     dword [ymov], -1
+            jmp     input_end
+
+        move_left:
+            ; prevent reverse: cannot go left if moving right (xmov = 1)
+            cmp     dword [xmov], 1
+            je      input_end
+            mov     dword [xmov], -1
+            mov     dword [ymov], 0
+            jmp     input_end
+
+        move_down:
+            ; prevent reverse: cannot go down if moving up (ymov = -1)
+            cmp     dword [ymov], -1
+            je      input_end
+            mov     dword [xmov], 0
+            mov     dword [ymov], 1
+            jmp     input_end
+
+        move_right:
+            ; prevent reverse: cannot go right if moving left (xmov = -1)
+            cmp     dword [xmov], -1
+            je      input_end
+            mov     dword [xmov], 1
+            mov     dword [ymov], 0
+
+	input_end:
 		call move_snake
 
 
