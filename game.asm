@@ -220,6 +220,27 @@ asm_main:
 	input_end:
 		call move_snake
 
+		; SELF COLLISION DETECTION
+		mov     eax, [snake]        ; head x
+		mov     ebx, [snake+4]      ; head y
+		mov     ecx, [snake_len]
+		dec     ecx                  ; skip head
+		mov     esi, 1               ; first body segment
+	check_self_loop:
+    		cmp     esi, ecx
+    		jg      self_check_end
+    		mov     edx, [snake + esi*8]       ; body x
+    		mov     edi, [snake + esi*8 + 4]   ; body y
+    		cmp     eax, edx
+    		jne     next_segment
+    		cmp     ebx, edi
+    		jne     next_segment
+    		; collision detected
+    		jmp     game_loop_end
+	next_segment:
+    		inc     esi
+    		jmp     check_self_loop
+	self_check_end:
 
 		; (W * y) + x = pos
 
