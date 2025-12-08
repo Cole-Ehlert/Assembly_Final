@@ -54,6 +54,8 @@ timeout_template:
     dd 0          ; tv_sec
     dd 100000      ; tv_usec (50 ms)
 
+	score_msg db "Score: %d", 10, 0
+
 segment .bss
 
 	; this array stores the current rendered gameboard (HxW)
@@ -73,12 +75,20 @@ segment .bss
 	xmov	resd	1
 	ymov	resd	1
 
+	; apple position
+	apple_x     resd 1
+	apple_y     resd 1
+
+	; score counter
+	score       resd 1
+
 	readfds: resb 128
 keybuf:     resb 1
 
-segment .text
 
-	global	asm_main
+
+segment .text
+	global  asm_main
 	global  raw_mode_on
 	global  raw_mode_off
 	global  init_board
@@ -97,8 +107,9 @@ _start:
 asm_main:
 	push	ebp
 	mov		ebp, esp
+	; ********** CODE STARTS HERE **********
 
-	; put the terminal in raw mode so the game works nicely
+; put the terminal in raw mode so the game works nicely
 	call	raw_mode_on
 
 	; read the game board file into the global variable
@@ -122,6 +133,11 @@ asm_main:
 	mov		DWORD [xmov], 1
 	mov		DWORD [ymov], 0
 
+  ; initialize score
+        mov     dword [score], 0
+
+        ; spawn the first apple
+        call    spawn_apple
 
 	; the game happens in this loop
 	; the steps are...
@@ -220,6 +236,29 @@ asm_main:
 	input_end:
 		call move_snake
 
+	; checks if snake ate apple
+		mov     eax, [snake]        ; head x
+		mov     ebx, [snake+4]      ; head y
+		cmp     eax, [apple_x]
+		jne 	skip_apple_eaten
+		cmp     ebx, [apple_y]
+		jne 	skip_apple_eaten
+
+	; if apple eaten add to score
+
+		add     dword [score], 1
+
+	; grow snake by increasing length
+		mov     eax, [snake_len]
+		inc     eax
+		mov     [snake_len], eax
+
+	; spawn new apple
+		call    spawn_apple
+
+	skip_apple_eaten:
+
+
 		; SELF COLLISION DETECTION
 		mov     eax, [snake]        ; head x
 		mov     ebx, [snake+4]      ; head y
@@ -259,8 +298,9 @@ asm_main:
 	game_loop_end:
 
 	; restore old terminal functionality
-	call raw_mode_off
+	call raw_mode_off	
 
+	; *********** CODE ENDS HERE ***********
 	mov		eax, 0
 	mov		esp, ebp
 	pop		ebp
@@ -320,6 +360,50 @@ move_snake:
 	mov 	DWORD [snake+4], eax
 
 	ret
+
+; spawn apple at "random" position not on the snake
+spawn_apple:
+    ; loop until it finds a free spot
+spawn_apple_loop:
+
+        ; "random" x
+        mov     eax, [score]
+        add     eax, 3
+        xor     edx, edx
+        mov     ecx, WIDTH
+        div     ecx
+        mov     esi, edx     ; temp x
+
+        ; "random" y
+        mov     eax, [score]
+        add     eax, 7
+        xor     edx, edx
+        mov     ecx, HEIGHT
+        div     ecx
+        mov     edi, edx     ; temp y
+
+        ; check against all snake segments
+        mov     ecx, [snake_len]
+        mov     ebx, 0
+check_snake_loop:
+        cmp     ebx, ecx
+        jge     apple_ok
+        mov     edx, [snake + ebx*8]      ; snake x
+        mov     eax, [snake + ebx*8 +4]   ; snake y
+        cmp     esi, edx
+        jne snake_next
+        cmp     edi, eax
+        jne snake_next
+        ; snake occupies this spot, try again
+        jmp spawn_apple_loop
+snake_next:
+        inc     ebx
+        jmp check_snake_loop
+
+apple_ok:
+        mov     [apple_x], esi
+        mov     [apple_y], edi
+        ret
 
 init_board:
 
@@ -412,7 +496,7 @@ render:
 			mov ecx, [snake_len]		; ecx will be the loop counter equal to snake length
 			snake_loop_start:
 				cmp 	ecx, 0							; if counter = 0 then jump to print_board
-				jz 		print_board
+				jz 		check_apple		;make it jump to check apple so the apples dont spawn outside the board
 
 				dec 	ecx								; decriment ecx
 
@@ -430,6 +514,20 @@ render:
 				add		esp, 4
 				jmp 	print_end
 
+			check_apple:
+				;checks if current x,y is apple
+				mov eax, [ebp - 8]
+				cmp eax, [apple_x]
+				jne print_board
+				mov eax, [ebp - 4]
+				cmp eax, [apple_y]
+				jne print_board
+
+				;prints the apple
+				push "A"
+				call putchar
+				add esp, 4
+				jmp print_end
 
 			print_board:
 				; otherwise print whatever's in the buffer
@@ -461,6 +559,11 @@ render:
 	inc		DWORD [ebp - 4]
 	jmp		y_loop_start
 	y_loop_end:
+  ; print score at the bottom
+    push    dword [score]
+    push    score_msg
+    call    printf
+    add     esp, 8
 
 	mov		esp, ebp
 	pop		ebp
