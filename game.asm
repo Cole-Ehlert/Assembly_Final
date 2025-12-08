@@ -31,7 +31,7 @@ segment .data
 
 	; used to change the terminal mode
 	mode_r				db "r",0
-	raw_mode_on_cmd		db "stty raw -echo min 0 time 0",0
+	raw_mode_on_cmd		db "stty raw -echo",0
 	raw_mode_off_cmd	db "stty -raw echo",0
 
 	; ANSI escape sequence to clear/refresh the screen
@@ -48,22 +48,22 @@ segment .data
 
 timeout:
     dd 0          ; seconds
-    dd 50000      ; microseconds (50ms)
+    dd 100000      ; microseconds (100ms)
 
 timeout_template:
     dd 0          ; tv_sec
-    dd 100000      ; tv_usec (50 ms)
+    dd 100000      ; tv_usec (100 ms)
 
 	score_msg db "Score: %d", 10, 0
+
+	; these variables store the snake movement direction
+	xmov dd 1
+	ymov dd 0
 
 segment .bss
 
 	; this array stores the current rendered gameboard (HxW)
 	board	resb	(HEIGHT * WIDTH)
-
-	; these variables store the current player position
-	xpos	resd	1
-	ypos	resd	1
 
 	; this array is a list to store the x and y positions for the snake on the board
 	snake	resd	(HEIGHT * WIDTH * 2)
@@ -72,8 +72,6 @@ segment .bss
 	snake_len resd 	1
 
 	; these variables will store the direction of movement
-	xmov	resd	1
-	ymov	resd	1
 
 	; apple position
 	apple_x     resd 1
@@ -85,7 +83,8 @@ segment .bss
 	readfds: resb 128
 keybuf:     resb 1
 
-
+	; random seed variable
+	rand_state resd 1
 
 segment .text
 	global  asm_main
@@ -115,6 +114,12 @@ asm_main:
 	; read the game board file into the global variable
 	call	init_board
 
+	; GET RANDOM SEED BASED ON TSC
+	rdtsc                   ; edx:eax = timestamp counter
+	xor eax, edx            ; mix high and low bits
+	mov [rand_state], eax   ; store as seed
+
+
 
 	; initialize the head of the snake
 	mov 	DWORD [snake], STARTX
@@ -128,10 +133,6 @@ asm_main:
 	mov 	DWORD [snake+20], STARTY
 
 	mov 	DWORD [snake_len], 3
-
-	; initialize the snake movement to the right
-	mov		DWORD [xmov], 1
-	mov		DWORD [ymov], 0
 
   ; initialize score
         mov     dword [score], 0
@@ -298,7 +299,7 @@ asm_main:
 	game_loop_end:
 
 	; restore old terminal functionality
-	call raw_mode_off	
+	call raw_mode_off
 
 	; *********** CODE ENDS HERE ***********
 	mov		eax, 0
@@ -361,27 +362,39 @@ move_snake:
 
 	ret
 
+
+
+; This function generate a random number that will change each time
+; eax = next_random()
+random32:
+    mov     eax, [rand_state]
+    imul    eax, eax, 1664525
+    add     eax, 1013904223
+    mov     [rand_state], eax
+    ret
+
+
+
 ; spawn apple at "random" position not on the snake
 spawn_apple:
     ; loop until it finds a free spot
 spawn_apple_loop:
 
-        ; "random" x
-        mov     eax, [score]
-        add     eax, 3
-        xor     edx, edx
-        mov     ecx, WIDTH
-        div     ecx
-        mov     esi, edx     ; temp x
+	; random x in [1, WIDTH-2]
+	call    random32
+	xor     edx, edx
+	mov     ecx, WIDTH-2      ; modulus = inner area width
+	div     ecx
+	mov     esi, edx
+	inc     esi               ; shift into range 1..WIDTH-2
 
-        ; "random" y
-        mov     eax, [score]
-        add     eax, 7
-        xor     edx, edx
-        mov     ecx, HEIGHT
-        div     ecx
-        mov     edi, edx     ; temp y
-
+	; random y in [1, HEIGHT-2]
+	call    random32
+	xor     edx, edx
+	mov     ecx, HEIGHT-2     ; modulus = inner area height
+	div     ecx
+	mov     edi, edx
+	inc     edi               ; shift into range 1..HEIGHT-2
         ; check against all snake segments
         mov     ecx, [snake_len]
         mov     ebx, 0
@@ -524,7 +537,7 @@ render:
 				jne print_board
 
 				;prints the apple
-				push "A"
+				push "@"
 				call putchar
 				add esp, 4
 				jmp print_end
